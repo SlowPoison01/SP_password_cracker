@@ -4,6 +4,7 @@ import random
 import re
 import sqlite3
 import hashlib
+import os
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -14,7 +15,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 class UltimateAdvancedBot:
     def __init__(self):
-        self.openai_key = "sk-your-actual-openai-key"
+        # Get API keys from environment variables
+        self.openai_key = os.environ.get('OPENAI_API_KEY', "sk-your-actual-openai-key")
         openai.api_key = self.openai_key
         
         # Developer Information
@@ -485,10 +487,16 @@ class UltimateAdvancedBot:
         
         await update.message.reply_text(help_text, parse_mode='Markdown')
 
-# Bot Initialization
-BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
+# Bot Initialization - Get BOT_TOKEN from environment variable
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
 
 def main():
+    # Check if BOT_TOKEN is set
+    if not BOT_TOKEN:
+        print("❌ ERROR: BOT_TOKEN environment variable not set!")
+        print("Please set BOT_TOKEN in Render environment variables")
+        return
+    
     bot = UltimateAdvancedBot()
     
     app = Application.builder().token(BOT_TOKEN).build()
@@ -518,10 +526,13 @@ def main():
     ║  ✅ Personal API Key Fallback         ║
     ║  ✅ Database Storage                  ║
     ║  ✅ Conversation History              ║
+    ║  ✅ Environment Variables Ready       ║
     ║                                       ║
     ║  🔓 Master Key: Slow@Poison4&^       ║
     ║  👤 Developer: @SlowPoison_0         ║
     ╚═══════════════════════════════════════╝
+    
+    🤖 Bot is starting...
     """)
     
     app.run_polling()
