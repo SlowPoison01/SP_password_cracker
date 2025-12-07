@@ -5,17 +5,44 @@ import re
 import sqlite3
 import hashlib
 import os
+import sys
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import logging
 
+# ==================== REPLIT COMPATIBILITY ====================
+# Keep alive server for Replit
+if 'REPL_ID' in os.environ:
+    print("✅ Running on Replit.com - Starting keep-alive server...")
+    from flask import Flask
+    from threading import Thread
+    
+    app = Flask('')
+    
+    @app.route('/')
+    def home():
+        return "🤖 Advanced SP GPT Bot is running on Replit!"
+    
+    def run_flask():
+        app.run(host='0.0.0.0', port=8080)
+    
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
 # Advanced Configuration
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 
 class UltimateAdvancedBot:
     def __init__(self):
-        # Get API keys from environment variables
+        # Get API keys from environment variables (Replit Secrets)
         self.openai_key = os.environ.get('OPENAI_API_KEY', "sk-your-actual-openai-key")
         openai.api_key = self.openai_key
         
@@ -50,80 +77,97 @@ class UltimateAdvancedBot:
         
         # Initialize conversation history database
         self.init_conversation_db()
+        
+        print(f"✅ Bot initialized with OpenAI key: {self.openai_key[:10]}...")
     
     def init_database(self):
         """Initialize SQLite database for access keys"""
-        conn = sqlite3.connect(self.access_keys_db)
-        cursor = conn.cursor()
-        
-        # Create tables
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY,
-                username TEXT,
-                access_key TEXT,
-                expiry_date TIMESTAMP,
-                api_key TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS conversations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                message TEXT,
-                response TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
+        try:
+            conn = sqlite3.connect(self.access_keys_db)
+            cursor = conn.cursor()
+            
+            # Create tables
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    access_key TEXT,
+                    expiry_date TIMESTAMP,
+                    api_key TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    message TEXT,
+                    response TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            conn.commit()
+            conn.close()
+            print("✅ Database initialized successfully")
+        except Exception as e:
+            print(f"❌ Database initialization error: {e}")
     
     def init_conversation_db(self):
         """Initialize conversation database"""
-        conn = sqlite3.connect(self.access_keys_db)
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_history (
-                user_id INTEGER,
-                role TEXT,
-                content TEXT,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-        conn.close()
+        try:
+            conn = sqlite3.connect(self.access_keys_db)
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS chat_history (
+                    user_id INTEGER,
+                    role TEXT,
+                    content TEXT,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            conn.commit()
+            conn.close()
+            print("✅ Conversation database initialized")
+        except Exception as e:
+            print(f"❌ Conversation DB error: {e}")
     
     def save_conversation(self, user_id, role, content):
         """Save conversation to database"""
-        conn = sqlite3.connect(self.access_keys_db)
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO chat_history (user_id, role, content) VALUES (?, ?, ?)",
-            (user_id, role, content)
-        )
-        conn.commit()
-        conn.close()
+        try:
+            conn = sqlite3.connect(self.access_keys_db)
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO chat_history (user_id, role, content) VALUES (?, ?, ?)",
+                (user_id, role, content[:1000])  # Limit content length
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"❌ Save conversation error: {e}")
     
     def get_conversation_history(self, user_id, limit=5):
         """Get conversation history"""
-        conn = sqlite3.connect(self.access_keys_db)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT role, content FROM chat_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
-            (user_id, limit)
-        )
-        history = cursor.fetchall()
-        conn.close()
-        
-        # Format for OpenAI
-        messages = []
-        for role, content in reversed(history):
-            messages.append({"role": role, "content": content})
-        
-        return messages
+        try:
+            conn = sqlite3.connect(self.access_keys_db)
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT role, content FROM chat_history WHERE user_id = ? ORDER BY timestamp DESC LIMIT ?",
+                (user_id, limit)
+            )
+            history = cursor.fetchall()
+            conn.close()
+            
+            # Format for OpenAI
+            messages = []
+            for role, content in reversed(history):
+                messages.append({"role": role, "content": content})
+            
+            return messages
+        except Exception as e:
+            print(f"❌ Get history error: {e}")
+            return []
     
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start command with unlock key requirement"""
@@ -231,14 +275,17 @@ class UltimateAdvancedBot:
             }
             
             # Save to database
-            conn = sqlite3.connect(self.access_keys_db)
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT OR REPLACE INTO users (user_id, expiry_date) VALUES (?, ?)",
-                (user_id, datetime.now() + timedelta(days=30))
-            )
-            conn.commit()
-            conn.close()
+            try:
+                conn = sqlite3.connect(self.access_keys_db)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT OR REPLACE INTO users (user_id, expiry_date) VALUES (?, ?)",
+                    (user_id, datetime.now() + timedelta(days=30))
+                )
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"❌ Database error: {e}")
             
             # Show menu after unlock
             keyboard = [
@@ -292,14 +339,17 @@ class UltimateAdvancedBot:
         self.user_sessions[user_id]["personal_api_key"] = api_key
         
         # Save to database
-        conn = sqlite3.connect(self.access_keys_db)
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE users SET api_key = ? WHERE user_id = ?",
-            (encrypted_key, user_id)
-        )
-        conn.commit()
-        conn.close()
+        try:
+            conn = sqlite3.connect(self.access_keys_db)
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET api_key = ? WHERE user_id = ?",
+                (encrypted_key, user_id)
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"❌ Database error: {e}")
         
         await update.message.reply_text(
             "✅ **Personal API Key Saved!**\n\n"
@@ -347,12 +397,14 @@ class UltimateAdvancedBot:
             # Try with main API first
             response_text = await self.generate_with_openai(messages)
         except Exception as e:
+            print(f"❌ OpenAI API error: {e}")
             # Try with personal API key if available
             personal_key = self.user_sessions[user_id].get("personal_api_key")
             if personal_key:
                 try:
                     response_text = await self.generate_with_personal_api(messages, personal_key)
-                except:
+                except Exception as pe:
+                    print(f"❌ Personal API error: {pe}")
                     response_text = self.get_fallback_response(user_message)
             else:
                 response_text = self.get_fallback_response(user_message)
@@ -367,23 +419,38 @@ class UltimateAdvancedBot:
         keyboard = [[InlineKeyboardButton("📱 Menu", callback_data="menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            f"🤖: {response_text}\n\n"
-            f"💬 Continue chatting or click menu for options:",
-            reply_markup=reply_markup
-        )
+        # Split long messages
+        if len(response_text) > 4000:
+            chunks = [response_text[i:i+4000] for i in range(0, len(response_text), 4000)]
+            for chunk in chunks:
+                await update.message.reply_text(chunk)
+            await update.message.reply_text(
+                "💬 Continue chatting or click menu for options:",
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text(
+                f"🤖: {response_text}\n\n"
+                f"💬 Continue chatting or click menu for options:",
+                reply_markup=reply_markup
+            )
     
     async def generate_with_openai(self, messages):
         """Generate response using main OpenAI API"""
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=messages,
-            max_tokens=2000,
-            temperature=1.2,
-            presence_penalty=-0.8,
-            frequency_penalty=-0.5
-        )
-        return response.choices[0].message.content
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",  # Changed to 3.5 for cost saving
+                messages=messages,
+                max_tokens=1500,
+                temperature=1.2,
+                presence_penalty=-0.8,
+                frequency_penalty=-0.5
+            )
+            return response.choices[0].message.content
+        except openai.error.InvalidRequestError as e:
+            # If context too long, truncate
+            print(f"⚠️ Context too long, truncating...")
+            return "Response truncated due to length. Please ask shorter questions."
     
     async def generate_with_personal_api(self, messages, api_key):
         """Generate response using personal API key"""
@@ -399,6 +466,8 @@ class UltimateAdvancedBot:
                 temperature=1.0
             )
             return response.choices[0].message.content
+        except Exception as e:
+            raise e
         finally:
             # Restore original key
             openai.api_key = original_key
@@ -487,37 +556,12 @@ class UltimateAdvancedBot:
         
         await update.message.reply_text(help_text, parse_mode='Markdown')
 
-# Bot Initialization - Get BOT_TOKEN from environment variable
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
-
+# ==================== MAIN EXECUTION ====================
 def main():
-    # Check if BOT_TOKEN is set
-    if not BOT_TOKEN:
-        print("❌ ERROR: BOT_TOKEN environment variable not set!")
-        print("Please set BOT_TOKEN in Render environment variables")
-        return
-    
-    bot = UltimateAdvancedBot()
-    
-    app = Application.builder().token(BOT_TOKEN).build()
-    
-    # Command handlers
-    app.add_handler(CommandHandler("start", bot.start))
-    app.add_handler(CommandHandler("unlock", bot.unlock))
-    app.add_handler(CommandHandler("setapikey", bot.setapikey))
-    app.add_handler(CommandHandler("menu", bot.menu))
-    app.add_handler(CommandHandler("help", bot.help))
-    
-    # Message handler
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
-    
-    # Button handler
-    app.add_handler(CallbackQueryHandler(bot.button_handler))
-    
     print("""
     ╔═══════════════════════════════════════╗
     ║      ADVANCED SP GPT BOT v2.0         ║
-    ║        WITH ALL UPDATES LOADED        ║
+    ║         REPLIT EDITION                ║
     ║                                       ║
     ║  ✅ Unlock System                     ║
     ║  ✅ Menu Buttons                      ║
@@ -526,16 +570,56 @@ def main():
     ║  ✅ Personal API Key Fallback         ║
     ║  ✅ Database Storage                  ║
     ║  ✅ Conversation History              ║
-    ║  ✅ Environment Variables Ready       ║
+    ║  ✅ Replit Compatible                 ║
     ║                                       ║
     ║  🔓 Master Key: Slow@Poison4&^       ║
     ║  👤 Developer: @SlowPoison_0         ║
     ╚═══════════════════════════════════════╝
-    
-    🤖 Bot is starting...
     """)
     
-    app.run_polling()
+    # Get BOT_TOKEN from environment variable (Replit Secrets)
+    BOT_TOKEN = os.environ.get('BOT_TOKEN')
+    
+    if not BOT_TOKEN:
+        print("❌ ERROR: BOT_TOKEN environment variable not set!")
+        print("Please set BOT_TOKEN in Replit Secrets:")
+        print("Key: BOT_TOKEN")
+        print("Value: 8532205475:AAGw5rn04AV8JS10at-patscarOXC0-4nuA")
+        print("\nAlso set OPENAI_API_KEY if needed.")
+        return
+    
+    print(f"✅ Bot token found: {BOT_TOKEN[:15]}...")
+    print("🤖 Starting bot...")
+    
+    try:
+        bot = UltimateAdvancedBot()
+        
+        app = Application.builder().token(BOT_TOKEN).build()
+        
+        # Command handlers
+        app.add_handler(CommandHandler("start", bot.start))
+        app.add_handler(CommandHandler("unlock", bot.unlock))
+        app.add_handler(CommandHandler("setapikey", bot.setapikey))
+        app.add_handler(CommandHandler("menu", bot.menu))
+        app.add_handler(CommandHandler("help", bot.help))
+        
+        # Message handler
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
+        
+        # Button handler
+        app.add_handler(CallbackQueryHandler(bot.button_handler))
+        
+        print("✅ Bot initialized successfully!")
+        print("🚀 Polling started...")
+        print("📱 Open Telegram and start chatting with your bot!")
+        
+        # Start polling
+        app.run_polling()
+        
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
